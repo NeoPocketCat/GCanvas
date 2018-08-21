@@ -185,6 +185,10 @@ JNIEXPORT void JNICALL Java_com_taobao_gcanvas_GCanvasJNI_registerCallback(JNIEn
 
 JNIEXPORT jint JNICALL Java_com_taobao_gcanvas_GCanvasJNI_getNativeFps(JNIEnv *je, jclass jc, jstring contextId);
 
+
+JNIEXPORT jint JNICALL Java_com_taobao_gcanvas_GCanvasJNI_measureText(JNIEnv *env, jclass type,
+                                                                      jstring text_, jstring font_);
+
 #ifdef __cplusplus
 }
 #endif

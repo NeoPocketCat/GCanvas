@@ -806,3 +806,19 @@ JNIEXPORT jint JNICALL Java_com_taobao_gcanvas_GCanvasJNI_getNativeFps(JNIEnv *j
 
     return 0;
 }
+
+JNIEXPORT jint JNICALL Java_com_taobao_gcanvas_GCanvasJNI_measureText(JNIEnv *env,
+                                                                      jclass type,
+                                                                      jstring text_,
+                                                                      jstring font_) {
+    const char *text_chars = env->GetStringUTFChars(text_, 0);
+    const char *font_chars = env->GetStringUTFChars(font_, 0);
+
+    static GCanvas *fakeCanvas = new GCanvas("");
+    size_t stringWidth = fakeCanvas->MeasureText(text_chars, font_chars);
+
+    env->ReleaseStringUTFChars(text_, text_chars);
+    env->ReleaseStringUTFChars(font_, font_chars);
+
+    return stringWidth;
+}

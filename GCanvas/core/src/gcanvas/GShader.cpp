@@ -266,3 +266,38 @@ void RadialGradientShader::calculateAttributesLocations()
 
     mHasTextureFlag = false;
 }
+
+static inline void generateGaussianDeviationData(int n, float sigma, float *result) {
+    float sigma22 = 2 * sigma * sigma;
+    float sigma22PI = static_cast<float>(M_PI * sigma22);
+
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            result[i * n + j] = exp(-(i * i + j * j) / sigma22) / sigma22PI;
+        }
+    }
+}
+
+ShadowShader::ShadowShader(const char *name, const char *vertexShaderSrc, const char *fragmentShaderSrc)
+        : GShader(name, vertexShaderSrc, fragmentShaderSrc) {
+    calculateAttributesLocations();
+}
+
+
+void ShadowShader::calculateAttributesLocations() {
+    mPositionSlot = glGetAttribLocation(mHandle, "a_position");
+    mTexcoordSlot = glGetAttribLocation(mHandle, "a_texCoord");
+    mShadowColor = glGetUniformLocation(mHandle, "u_shadowColor");
+    mBlurStep = glGetUniformLocation(mHandle, "u_blurStep");
+    mBlurRadius = glGetUniformLocation(mHandle, "u_blurRadius");
+    mShadowMvpMatrix = glGetUniformLocation(mHandle, "u_shadowMvpMatrix");
+    mUseShadowTexture = glGetUniformLocation(mHandle, "u_useShadowTexture");
+    mGaussianKernel= glGetUniformLocation(mHandle, "u_gaussianKernel");
+}
+
+void ShadowShader::LoadGaussianKernel(int radius, float sigma) {
+    int matrixSize = (radius + 1)*(radius + 1);
+    float kernel[matrixSize];
+    generateGaussianDeviationData(radius + 1, sigma, kernel);
+    glUniform1fv(mGaussianKernel, matrixSize, kernel);
+}

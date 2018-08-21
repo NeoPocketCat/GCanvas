@@ -161,6 +161,14 @@
 
 - (GFontLayout *)getLayoutForString:(NSString *)string withFontStyle:(NSString*)fontStyle
 {
+    static NSCache *fontLayoutCache = [NSCache new];
+
+    NSString *cacheKey = [NSString stringWithFormat:@"%@-%@", string, fontStyle];
+    GFontLayout *fontLayout = [fontLayoutCache objectForKey:cacheKey];
+    if (fontLayout) {
+        return fontLayout;
+    }
+
     GCVFont *curFont = self;
 
     // Create attributed line
@@ -231,13 +239,15 @@
         }
     }
     // Create the layout object and add it to the cache
-    GFontLayout *fontLayout = [[GFontLayout alloc] init];
+    fontLayout = [[GFontLayout alloc] init];
     fontLayout.glyphLayout = layoutData;
     fontLayout.glyphCount = lineGlyphCount;
     fontLayout.metrics = metrics;
-    
+
     CFRelease(line);
-    
+
+    [fontLayoutCache setObject:fontLayout forKey:cacheKey];
+
     return fontLayout;
 }
 
@@ -293,6 +303,7 @@
         textureCache[@(glyph)] = @(textureId);
     } else {
         glBindTexture(GL_TEXTURE_2D, textureId);
+        return textureId;
     }
     
     glyphInfo->textureIndex = textureCache.count; // 0 is reserved, index starts at 1
@@ -374,6 +385,10 @@
     }
     
     return srcPoint;
+}
+
+- (CTFontRef)mainFont {
+    return _ctMainFont;
 }
 
 @end

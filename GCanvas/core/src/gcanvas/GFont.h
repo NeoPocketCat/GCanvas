@@ -149,6 +149,13 @@ public:
                             int &ftBitmapHeight, unsigned char *&bitmapBuffer,
                             int &left, int &top, float &advanceX, float &advanceY));
 
+#ifdef GFONT_LOAD_BY_FREETYPE
+
+    static bool LoadFace(const char *filename,
+                         const float size, FT_Face *face);
+
+#endif
+
 private:
     void drawGlyph(const GGlyph *glyph, GCanvasContext *context, float x,
                    float y, GColorRGBA color);
@@ -160,8 +167,6 @@ private:
                                         float &advanceY);
 #ifdef GFONT_LOAD_BY_FREETYPE
     void loadGlyphs(const wchar_t *charcodes);
-    static bool loadFace(FT_Library *library, const char *filename,
-                         const float size, FT_Face *face);
 #endif
 
 private:

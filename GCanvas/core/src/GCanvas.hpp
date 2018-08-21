@@ -340,6 +340,9 @@ protected:
     std::map< int, int > mOfflineTextures;
 #endif
 
+    void RenderShadowStart();
+
+    void RenderShadowEnd();
 };
 
 

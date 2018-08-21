@@ -887,6 +887,69 @@ void GCanvas::execute2dCommands(const char *renderCommands, int length) {
                 setSyncResult(imageDataResult);
                 break;
             }
+            case 'I': {
+                //shadowColor
+                p++;
+                char str[64] = "";
+                char *tmp = str;
+                while (*p && *p != ';') {
+                    *tmp = *p;
+                    ++tmp;
+                    ++p;
+                }
+                if (p - tmp) {
+                    if (*p == ';') ++p;
+                    GColorRGBA color = StrValueToColorRGBA(str);
+                    if (color.rgba.a) {
+                        mRenderShadow = true;
+                        SetShadowColor(color);
+                        SendVertexBufferToGPU();
+                        break;
+                    }
+                }
+
+                mRenderShadow = false;
+                break;
+            }
+            case 'K': {
+                //shadowOffsetX
+                p++;
+                float w = fastFloat(p);
+                SetShadowOffsetX(w);
+                while (*p && *p != ';') ++p;
+                if (*p == ';') ++p;
+                break;
+            }
+            case 'O': {
+                //shadowOffsetY
+                p++;
+                float w = fastFloat(p);
+                SetShadowOffsetY(w);
+                while (*p && *p != ';') ++p;
+                if (*p == ';') ++p;
+                break;
+            }
+            case 'Q': {
+                //shadowBlur
+                p++;
+                float w = fastFloat(p);
+                SetShadowBlur(w);
+                while (*p && *p != ';') ++p;
+                if (*p == ';') ++p;
+                break;
+            }
+//            case 'V': {
+//                break;
+//            }
+//            case 'X': {
+//                break;
+//            }
+//            case 'Y': {
+//                break;
+//            }
+//            case 'Z': {
+//                break;
+//            }
             default: {
                 LOG_W("unknown error");
                 LOG_W("command: %s", p);
@@ -1201,7 +1264,8 @@ void GCanvas::parseSetTransForTextform(
 void GCanvas::DrawText(const char *text, float x, float y, float maxWidth,
                        bool isStroke) {
     const GCompositeOperation old_op = mCurrentState->mGlobalCompositeOp;
-    SetGlobalCompositeOperation(COMPOSITE_OP_SOURCE_OVER);
+    //如果遇到文字叠加效果，尝试改回 COMPOSITE_OP_SOURCE_OVER
+    SetGlobalCompositeOperation(old_op);
 
 #ifdef ANDROID
 
@@ -1474,6 +1538,91 @@ void GCanvas::AddCallback(const char *callbackID, const char *result,
 
 void GCanvas::setSyncResult(std::string result) {
     mResult = result;
+}
+
+void GCanvas::RenderShadowStart() {
+    SendVertexBufferToGPU();
+    mPreventIndexRollback = true;
+}
+
+void GCanvas::RenderShadowEnd() {
+    GLint savedFramebuffer;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &savedFramebuffer);
+    GLint savedTexture;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &savedTexture);
+
+    GShader* savedShader = mCurrentState->mShader;
+
+    //bind FBO
+    glBindFramebuffer(GL_FRAMEBUFFER, mShadowFBOFrame[0]);
+    mShadowTexture[0]->Bind();
+
+    glClearColor(1.0, 1.0, 1.0, 0);
+
+    //render shadow color shape
+    UseShadowRenderPipeline();
+    BindPositionVertexBuffer();
+
+    mCurrentState->mShader->LoadGaussianKernel(10, 8);
+
+    mCurrentState->mShader->SetUseShadowTexture(0);
+    mCurrentState->mShader->SetShadowColor(mCurrentState->mShadowColor.components);
+    mCurrentState->mShader->SetShadowMatrix(GTransformConcat(mCurrentState->mTransform,
+            GTransform(1, 0, 0, 1, mCurrentState->mShadowOffsetX, mCurrentState->mShadowOffsetY)));
+
+    SendVertexBufferToGPU();
+
+
+    mCurrentState->mShader->SetShadowMatrix(GTransform());
+
+    //blur shadow
+    float vShadowVertices[] = {
+            -1.0f, 1.0f, 0.0f, 1.0f,
+            1.0f, 1.0f, 1.0f, 1.0f,
+            -1.0f, -1.0f, 0.0f, 0.0f,
+            1.0f, 1.0f, 1.0f, 1.0f,
+            1.0f, -1.0f, 1.0f, 0.0f,
+            -1.0f, -1.0f, 0.0f, 0.0f
+    };
+
+    mCurrentState->mShader->SetUseShadowTexture(1);
+    GLuint positionSlot = mCurrentState->mShader->GetPositionSlot();
+    glVertexAttribPointer(positionSlot, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), vShadowVertices);
+    glEnableVertexAttribArray(positionSlot);
+    GLuint texcoordSlot = mCurrentState->mShader->GetTexcoordSlot();
+    glVertexAttribPointer(texcoordSlot, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), vShadowVertices + 2);
+    glEnableVertexAttribArray(texcoordSlot);
+
+    mCurrentState->mShader->SetShadowBlurRadius(10);
+    mCurrentState->mShader->SetShadowBlurStep(1.f / mWidth, 1.f / mHeight);
+    glBindFramebuffer(GL_FRAMEBUFFER, mShadowFBOFrame[1]);
+    mShadowTexture[0]->Bind();
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+
+//    int shadowBlur = mCurrentState->mShadowBlur * 2;
+//    for (int i = 1,frameIndex = 0; i <= shadowBlur; i += 1, frameIndex++) {
+//        glBindFramebuffer(GL_FRAMEBUFFER, mShadowFBOFrame[(frameIndex + 1) % 2]);
+//        mShadowTexture[frameIndex % 2]->Bind();
+//        mCurrentState->mShader->SetShadowBlurStep((float) i / (mWidth * mDevicePixelRatio), (float) i / (mHeight * mDevicePixelRatio));
+//        glDrawArrays(GL_TRIANGLES, 0, 6);
+//    }
+
+    //render shadow to scene
+    glBindFramebuffer(GL_FRAMEBUFFER, savedFramebuffer);
+    mShadowTexture[1]->Bind();
+    mCurrentState->mShader->SetUseShadowTexture(1);
+    mCurrentState->mShader->SetShadowBlurRadius(0);
+    mCurrentState->mShader->SetShadowBlurStep(0, 0);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    //render scene
+    mPreventIndexRollback = false;
+    mCurrentState->mShader = savedShader;
+    mCurrentState->mShader->Bind();
+    BindVertexBuffer();
+    glBindTexture(GL_TEXTURE_2D, savedTexture);
+    SendVertexBufferToGPU();
 }
 
 #ifdef ANDROID

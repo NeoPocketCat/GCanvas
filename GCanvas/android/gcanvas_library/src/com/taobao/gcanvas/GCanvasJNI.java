@@ -108,6 +108,8 @@ public class GCanvasJNI {
 
     public static native void addFallbackFontFamily(String[] fallbackFontFiles);
 
+    public static native int measureText(String text, String font);
+
     public static void registerWXCallNativeFunc(Context context) {
         /**
          * We have a different javascript-call-native solution on Weex, which we call it "directly" call-native.

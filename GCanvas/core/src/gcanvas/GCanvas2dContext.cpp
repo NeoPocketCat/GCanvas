@@ -19,6 +19,8 @@
 
 #ifdef ANDROID
 #include "GFontCache.h"
+#include "GFont.h"
+#include "support/CharacterSet.h"
 #endif
 
 #ifdef GFONT_LOAD_BY_FREETYPE
@@ -126,6 +128,10 @@ GCanvasState &GCanvasState::operator=(const GCanvasState &state)
     mLineJoin = state.mLineJoin;
     mMiterLimit = state.mMiterLimit;
     mShader = state.mShader;
+    mShadowBlur = state.mShadowBlur;
+    mShadowColor.rgba = state.mShadowColor.rgba;
+    mShadowOffsetX = state.mShadowOffsetX;
+    mShadowOffsetY = state.mShadowOffsetY;
 
     mFillStyle = nullptr;
     if (state.mFillStyle != nullptr)
@@ -187,61 +193,15 @@ GCanvasState::~GCanvasState()
 }
 
 #ifdef ANDROID
-bool GCanvasContext::LoadFace(FT_Library *library, const char *filename,
-                               const float size, FT_Face *face)
-{
-    size_t hres = 64;
-    FT_Matrix matrix = {(int)((1.0 / hres) * 0x10000L), (int)((0.0) * 0x10000L),
-                        (int)((0.0) * 0x10000L), (int)((1.0) * 0x10000L)};
-
-    assert(library);
-    assert(filename);
-    assert(size);
-
-    FT_Error error = FT_Init_FreeType(library);
-    if (error)
-    {
-        return false;
-    }
-
-    error = FT_New_Face(*library, filename, 0, face);
-    if (error)
-    {
-        assert(filename == 0);
-        FT_Done_FreeType(*library);
-        return false;
-    }
-
-    error = FT_Select_Charmap(*face, FT_ENCODING_UNICODE);
-    if (error)
-    {
-        FT_Done_Face(*face);
-        FT_Done_FreeType(*library);
-        return false;
-    }
-
-    error = FT_Set_Char_Size(*face, (int)(size * 64), 0, (FT_UInt)72 * hres, 72);
-    if (error)
-    {
-        FT_Done_Face(*face);
-        FT_Done_FreeType(*library);
-        return false;
-    }
-
-    FT_Set_Transform(*face, &matrix, nullptr);
-
-    return true;
-}
 
 bool GCanvasContext::IsGlyphExistedInFont(const wchar_t charCode,
                                            const float size,
                                            std::string filename)
 {
-    FT_Library library;
     FT_Face face;
     bool existed = true;
 
-    if (!this->LoadFace(&library, filename.c_str(), size, &face))
+    if (!GFont::LoadFace(filename.c_str(), size, &face))
     {
         return false;
     }
@@ -251,9 +211,6 @@ bool GCanvasContext::IsGlyphExistedInFont(const wchar_t charCode,
     {
         existed = false;
     }
-
-    FT_Done_Face(face);
-    FT_Done_FreeType(library);
 
     return existed;
 }
@@ -333,24 +290,24 @@ char *GCanvasContext::TryDefaultFallbackFont(const wchar_t charCode,
 
 char *GCanvasContext::TryOtherFallbackFont(const wchar_t charCode,
                                             const float size,
-                                            const char *currentFontLocation)
+                                            const char *currentFontLocation,
+                                           GFontStyle *fontStyle)
 {
     return SystemFontInformation::GetSystemFontInformation()
-        ->GetClosestFontFamily(this, currentFontLocation, charCode, size,
-                               *mCurrentState->mFont);
+        ->GetClosestFontFamily(this, currentFontLocation, charCode, size, *fontStyle);
 }
 
-GFont *GCanvasContext::GetFontByCharCode(wchar_t charCode)
+GFont *GCanvasContext::GetFontByCharCode(wchar_t charCode, GFontStyle *fontStyle)
 {
-    if (mCurrentState->mFont == nullptr)
+    if (fontStyle == nullptr)
     {
-        mCurrentState->mFont = new GFontStyle();
+        fontStyle = new GFontStyle();
     }
 
     float devicePixelRatio = 1;
     if (mHiQuality) devicePixelRatio = this->mDevicePixelRatio;
 
-    float size = mCurrentState->mFont->GetSize() * devicePixelRatio;
+    float size = fontStyle->GetSize() * devicePixelRatio;
 
     const char *defaultSystemFontLocation = "/system/fonts/";
 
@@ -362,11 +319,11 @@ GFont *GCanvasContext::GetFontByCharCode(wchar_t charCode)
 
     const char *currentFontFile = nullptr;
     auto fontFamily = SystemFontInformation::GetSystemFontInformation()->FindFontFamily(
-            mCurrentState->mFont->GetFamily().c_str());
+            fontStyle->GetFamily().c_str());
 
     if (fontFamily != nullptr)
     {
-        currentFontFile = fontFamily->MatchFamilyStyle(*mCurrentState->mFont);
+        currentFontFile = fontFamily->MatchFamilyStyle(*fontStyle);
     }
 
     if (nullptr != currentFontFile)
@@ -383,7 +340,7 @@ GFont *GCanvasContext::GetFontByCharCode(wchar_t charCode)
             currentFontFile = TryDefaultFallbackFont(charCode, size, currentFontLocation);
             if (nullptr == currentFontFile)
             {
-                currentFontFile = TryOtherFallbackFont(charCode, size, currentFontLocation);
+                currentFontFile = TryOtherFallbackFont(charCode, size, currentFontLocation, fontStyle);
             }
         }
     }
@@ -404,6 +361,22 @@ void GCanvasContext::FillTextInternal(GFont *font, wchar_t charcode,
 
     font->DrawText(charcode, this, x, y, GetFillStyle());
 }
+
+size_t GCanvasContext::MeasureText(const char *text, const char *fontConfig) {
+    Utf8ToUCS2 *lbData = new Utf8ToUCS2(text, strlen(text));
+    GFontStyle fontStyle(fontConfig);
+
+    size_t stringPixelWidth = 0;
+    for (unsigned int i = 0; i < lbData->ucs2len; ++i) {
+        wchar_t charCode = lbData->ucs2[i];
+        GFont *font = this->GetFontByCharCode(charCode, &fontStyle);
+        stringPixelWidth += font->GetGlyph(charCode)->width;
+    }
+
+    delete lbData;
+    return stringPixelWidth;
+}
+
 #endif
 
 void GCanvasContext::FillText(const unsigned short *text,
@@ -418,9 +391,13 @@ void GCanvasContext::FillText(const unsigned short *text,
 #ifdef ANDROID
     std::vector< GFont * > fonts;
 
+    if (mCurrentState->mFont == nullptr)
+    {
+        mCurrentState->mFont = new GFontStyle();
+    }
     for (unsigned int i = 0; i < text_length; ++i)
     {
-        fonts.push_back(this->GetFontByCharCode(text[i]));
+        fonts.push_back(this->GetFontByCharCode(text[i], mCurrentState->mFont));
     }
 
     this->adjustTextPenPoint(fonts, text, text_length, x, y);
@@ -551,6 +528,7 @@ GCanvasContext::GCanvasContext(short w, short h)
     if (mWidth > 0 && mHeight > 0)
     {
         InitFBO();
+        InitShadowFBO();
     }
 #ifdef ANDROID
     mShaderManager = nullptr;
@@ -706,9 +684,73 @@ void GCanvasContext::UnbindFBO()
     glBindFramebuffer(GL_FRAMEBUFFER, mSaveFboFrame);
 }
 
+void GCanvasContext::InitShadowFBO() {
+    if (0 != mContextType) return;
+    GLint saveFboFrame;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &saveFboFrame);
+    GLint saveTexture;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &saveTexture);
+
+    DeleteShadowFBO();
+
+    glGenFramebuffers(2, mShadowFBOFrame);
+
+    GLuint shadowTexName[2];
+    glGenTextures(2, shadowTexName);
+
+    for (int i = 0; i < 2; i++) {
+        GLuint textureID = shadowTexName[i];
+        glBindFramebuffer(GL_FRAMEBUFFER, mShadowFBOFrame[i]);
+
+        // Create a texture object to apply to model
+        glBindTexture(GL_TEXTURE_2D, textureID);
+        // Set up filter and wrap modes for this texture object
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mWidth, mHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textureID, 0);
+
+        GTexture *texture = new GTexture();
+        texture->SetTextureID(textureID);
+        texture->SetWidth(mWidth);
+        texture->SetHeight(mHeight);
+        texture->SetFormat(GL_RGBA);
+        mShadowTexture[i] = texture;
+
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            LOG_D("failed to make complete framebuffer object %x", glCheckFramebufferStatus(GL_FRAMEBUFFER));
+        }
+        glClearColor(1.f, 1.f, 1.f, 0.0f);
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, saveFboFrame);
+    glBindTexture(GL_TEXTURE_2D, saveTexture);
+}
+
+void GCanvasContext::DeleteShadowFBO() {
+    if (mShadowFBOFrame[0] || mShadowFBOFrame[1]) {
+        for (int i = 0; i < 2; i++) {
+            glDeleteFramebuffers(1, mShadowFBOFrame + i);
+            mShadowFBOFrame[i] = 0;
+        }
+    }
+
+    if (mShadowTexture[0] || mShadowTexture[1]) {
+        for (int i = 0; i < 2; i++) {
+            GLuint textureId = mShadowTexture[i]->GetTextureID();
+            glDeleteTextures(1, &textureId);
+        }
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+}
+
 GCanvasContext::~GCanvasContext()
 {
     DeleteFBO();
+    DeleteShadowFBO();
 //    GShaderManager::release();
 
 #ifdef ANDROID
@@ -735,6 +777,7 @@ bool GCanvasContext::InitializeGLEnvironment()
     if (mWidth > 0 && mHeight > 0)
     {
         InitFBO();
+        InitShadowFBO();
     }
     glEnable(GL_BLEND);
     glDepthFunc(GL_ALWAYS);
@@ -745,6 +788,11 @@ bool GCanvasContext::InitializeGLEnvironment()
 
     CalculateProjectTransform();
     ResetStateStack();
+
+    UseShadowRenderPipeline();
+    if (nullptr == mCurrentState->mShader) {
+        return false;
+    }
 
     UsePatternRenderPipeline();
     if (nullptr == mCurrentState->mShader)
@@ -838,7 +886,7 @@ void GCanvasContext::BindVertexBuffer()
                               GL_FLOAT, GL_FALSE, sizeof(GVertex),
                               ((float *)CanvasVertexBuffer) + 2);
     }
-    if (mCurrentState->mShader->GetColorSlot())
+    if (mCurrentState->mShader->GetColorSlot() >= 0)
     {
         glEnableVertexAttribArray((GLuint)mCurrentState->mShader->GetColorSlot());
         glVertexAttribPointer((GLuint)mCurrentState->mShader->GetColorSlot(), 4,
@@ -888,7 +936,9 @@ void GCanvasContext::SendVertexBufferToGPU(const GLenum geometry_type)
     }
 
     glDrawArrays(geometry_type, 0, mVertexBufferIndex);
-    mVertexBufferIndex = 0;
+    if (!mPreventIndexRollback || mVertexBufferIndex >= GCANVAS_VERTEX_BUFFER_SIZE - 6) {
+        mVertexBufferIndex = 0;
+    }
 }
 
 void GCanvasContext::PushTriangle(GPoint v1, GPoint v2, GPoint v3,
@@ -1313,6 +1363,22 @@ void GCanvasContext::SetFillStyle(GColorRGBA c)
     }
 }
 
+void GCanvasContext::SetShadowColor(GColorRGBA color) {
+    mCurrentState->mShadowColor = color;
+}
+
+void GCanvasContext::SetShadowOffsetX(float offsetX) {
+    mCurrentState->mShadowOffsetX = offsetX;
+}
+
+void GCanvasContext::SetShadowOffsetY(float offsetY) {
+    mCurrentState->mShadowOffsetY = offsetY;
+}
+
+void GCanvasContext::SetShadowBlur(int blur) {
+    mCurrentState->mShadowBlur = blur;
+}
+
 void GCanvasContext::SetClearColor(const GColorRGBA &c)
 {
     mClearColor = c;
@@ -1484,8 +1550,25 @@ void GCanvasContext::UseRadialGradientPipeline()
     }
 }
 
+void GCanvasContext::UseShadowRenderPipeline() {
+//    SendVertexBufferToGPU();
+#ifdef IOS
+    mCurrentState->mShader = GShaderManager::getSingleton()->programForKey("SHADOW");
+#endif
+
+#ifdef ANDROID
+    mCurrentState->mShader = mShaderManager->programForKey("SHADOW");
+#endif
+    if (mCurrentState->mShader != nullptr) {
+        mCurrentState->mShader->Bind();
+    }
+}
+
 #ifdef ANDROID
 std::string GCanvas::exe2dSyncCmd(int cmd,const char *&args){
     return "";
 }
+
+
+
 #endif

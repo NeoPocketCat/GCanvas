@@ -99,6 +99,8 @@ typedef struct {
                     baseLine:(GTextBaseline)baseLine
                      metrics:(GTextMetrics)metrics;
 
+- (CTFontRef)mainFont;
+
 @end
 
 #endif /* GCVFont_h */

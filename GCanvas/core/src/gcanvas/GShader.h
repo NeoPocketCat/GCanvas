@@ -25,7 +25,9 @@
 #include <GLES2/gl2.h>
 #endif
 
+#include <sys/param.h>
 #include "GPoint.h"
+#include "GTransform.h"
 
 class GShader
 {
@@ -73,6 +75,18 @@ public:
     virtual void SortColorStop() {}
 
     virtual void SetTextureSize(float width, float height) {}
+
+    virtual void SetShadowMatrix(GTransform transform) {}
+
+    virtual void SetShadowBlurStep(float x, float y) {}
+
+    virtual void SetShadowBlurRadius(int radius){}
+
+    virtual void SetShadowColor(float *shadowColor){}
+
+    virtual void SetUseShadowTexture(int blur){}
+
+    virtual void LoadGaussianKernel(int radius, float sigma) {}
 
 protected:
     virtual void calculateAttributesLocations();
@@ -350,6 +364,62 @@ protected:
 
     GLuint mHasTextureSlot;
     bool mHasTextureFlag;
+};
+
+
+class ShadowShader : public GShader {
+
+public:
+    ShadowShader(const char *name, const char *vertexShaderSrc,
+            const char *fragmentShaderSrc);
+
+    GLint GetTexcoordSlot() override {
+        return mTexcoordSlot;
+    }
+
+    GLint GetPositionSlot() override {
+        return mPositionSlot;
+    }
+
+    void SetShadowMatrix(GTransform transform) override {
+        GLfloat m[] = {
+                transform.a, transform.b, 0.0f, 0.0f,
+                transform.c, transform.d, 0.0f, 0.0f,
+                0.0f, 0.0f, 1.0f, 0.0f,
+                transform.tx, transform.ty, 0.0f, 1.0f
+        };
+        glUniformMatrix4fv(mShadowMvpMatrix, 1, GL_FALSE, m);
+    }
+
+    void SetShadowBlurStep(float x, float y) override {
+        glUniform2f(mBlurStep, x, y);
+    }
+
+    void SetShadowBlurRadius(int radius) override{
+        glUniform1i(mBlurRadius, radius);
+    }
+
+    void SetShadowColor(float *shadowColor) override{
+        glUniform4fv(mShadowColor, 1, shadowColor);
+    }
+
+    void SetUseShadowTexture(int blur) override {
+        glUniform1i(mUseShadowTexture, blur);
+    }
+
+    void LoadGaussianKernel(int radius, float sigma) override;
+
+protected:
+    void calculateAttributesLocations() override;
+
+    GLint mTexcoordSlot;
+    GLint mPositionSlot;
+    GLint mBlurStep;
+    GLint mBlurRadius;
+    GLint mShadowMvpMatrix;
+    GLint mShadowColor;
+    GLint mUseShadowTexture;
+    GLint mGaussianKernel;
 };
 
 #endif

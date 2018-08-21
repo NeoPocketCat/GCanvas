@@ -12,6 +12,7 @@
 #include "shaders/grad.glsl"
 #include "shaders/pattern.glsl"
 #include "shaders/radiation.glsl"
+#include "shaders/shadow.glsl"
 
 #ifdef ANDROID
 #include "GPreCompiledShaders.h"
@@ -127,4 +128,8 @@ void GShaderManager::loadDefaultShaders()
     program = new RadialGradientShader(RADIAL_SHADER, RADIAL_SHADER_VS,
                                        RADIAL_SHADER_PS);
     addProgram(RADIAL_SHADER, program);
+
+    program = new ShadowShader(SHADOW_SHADER, SHADOW_SHADER_VS, SHADOW_SHADER_PS);
+
+    addProgram(SHADOW_SHADER, program);
 }

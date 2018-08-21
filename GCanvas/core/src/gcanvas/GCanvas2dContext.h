@@ -72,6 +72,7 @@ typedef enum {
     COMPOSITE_OP_XOR,
     COMPOSITE_OP_REPLACE,
     COMPOSITE_OP_ALPHA,
+    COMPOSITE_OP_LIGHTEN,
 } GCompositeOperation;
 
 static const struct
@@ -79,15 +80,17 @@ static const struct
     GLenum source;
     GLenum destination;
 } GCompositeOperationFuncs[] = {
-    {GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA},
-    {GL_SRC_ALPHA, GL_ONE},
-    {GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA},
-    {GL_ZERO, GL_ONE_MINUS_SRC_ALPHA},
-    {GL_SRC_ALPHA_SATURATE, GL_DST_ALPHA},
-    {GL_DST_ALPHA, GL_ZERO},
-    {GL_ONE_MINUS_DST_ALPHA, GL_ONE_MINUS_SRC_ALPHA},
-    {GL_ONE, GL_ZERO},
-    {GL_SRC_ALPHA, GL_DST_ALPHA}};
+        {GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA},
+        {GL_SRC_ALPHA, GL_ONE},
+        {GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA},
+        {GL_ZERO, GL_ONE_MINUS_SRC_ALPHA},
+        {GL_SRC_ALPHA_SATURATE, GL_DST_ALPHA},
+        {GL_DST_ALPHA, GL_ZERO},
+        {GL_ONE_MINUS_DST_ALPHA, GL_ONE_MINUS_SRC_ALPHA},
+        {GL_ONE, GL_ZERO},
+        {GL_SRC_ALPHA, GL_DST_ALPHA},
+        {GL_ONE, GL_ONE}
+};
 
 class GCanvasState
 {
@@ -120,6 +123,11 @@ public:
     GPath *mClipPath;
     GShader *mShader;
     GFillStyle *mFillStyle;
+
+    GColorRGBA mShadowColor;
+    int mShadowBlur;
+    float mShadowOffsetX;
+    float mShadowOffsetY;
 };
 
 typedef void (*G2DFontDrawTextFunc)(const unsigned short *text, unsigned int textLength, float x,
@@ -153,6 +161,7 @@ public:
     void UsePatternRenderPipeline();
     void UseLinearGradientPipeline();
     void UseRadialGradientPipeline();
+    void UseShadowRenderPipeline();
     void SetTexture(const GTexture *texture);
     void ClearGeometryDataBuffers();
     void SendVertexBufferToGPU(const GLenum geometry_type = GL_TRIANGLES);
@@ -191,6 +200,10 @@ public:
         return mCurrentState->mFillColor;
     }
     void SetFillStyle(GColorRGBA c);
+    void SetShadowColor(GColorRGBA c);
+    void SetShadowOffsetX(float offsetX);
+    void SetShadowOffsetY(float offsetY);
+    void SetShadowBlur(int blur);
     void SetClearColor(const GColorRGBA &c);
     GColorRGBA GetClearColor() const { return mClearColor; }
     void ClearScreen(const GColorRGBA &color);
@@ -258,8 +271,6 @@ public:
     void BindFBO();
     void UnbindFBO();
 #ifdef ANDROID
-    bool LoadFace(FT_Library *library, const char *filename, const float size,
-                  FT_Face *face);
     bool IsGlyphExistedInFont(const wchar_t charCode, const float size,
                               std::string filename);
     char *GetDefaultFont();
@@ -269,12 +280,14 @@ public:
     char *TryDefaultFallbackFont(const wchar_t charCode, const float size,
                                  const char *currentFontLocation);
     char *TryOtherFallbackFont(const wchar_t charCode, const float size,
-                               const char *currentFontLocation);
+                               const char *currentFontLocation,
+                               gcanvas::GFontStyle *fontStyle);
     char *TrySpecFont(const wchar_t charCode, const float size,
                       const char *currentFontLocation,
                       const char *specFontFile);
     void FillTextInternal(GFont *font, wchar_t text, float &x, float y);
-    GFont *GetFontByCharCode(wchar_t charCode);
+    GFont *GetFontByCharCode(wchar_t charCode, gcanvas::GFontStyle *fontStyle);
+    size_t MeasureText(const char *text, const char *font);
 #endif
     bool IsFboSupport() const { return mIsFboSupported; }
     void SetHiQuality(bool isHiQuality) { mHiQuality = isHiQuality; }
@@ -316,6 +329,8 @@ protected:
     GCanvasState *mCurrentState;
     bool mHasClipRegion;
     bool mHiQuality;
+    bool mRenderShadow;
+    bool mPreventIndexRollback{false};
     int mVertexBufferIndex;
     GShader *mSaveShader;
 //    GTexture mFboTexture;
@@ -323,6 +338,9 @@ protected:
     GLuint mFboStencil;
     GLint mSaveFboFrame;
     GColorRGBA mClearColor;
+
+    GLuint mShadowFBOFrame[2];
+    GTexture *mShadowTexture[2] = {nullptr};
 
 #ifdef ANDROID
     GShaderManager *mShaderManager;
@@ -341,6 +359,10 @@ private:
                             /*out*/ float &x,
                             /*out*/ float &y);
 #endif
+
+    void InitShadowFBO();
+
+    void DeleteShadowFBO();
 };
 
 #endif /* defined(__GCanvas__GCanvasContext__) */

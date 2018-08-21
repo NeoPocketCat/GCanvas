@@ -468,8 +468,9 @@ void GPath::DrawLinesToContext(GCanvasContext *context) {
             float deltaY = stopPoint.y - startPoint.y;
             float length = sqrtf(deltaX * deltaX + deltaY * deltaY);
             float temp = deltaX;
-            deltaX = deltaY * lineWidth / length;
-            deltaY = temp * lineWidth / length;
+            //双向的delta偏移使得线宽被翻倍，效果与 Web 不符，需要取半
+            deltaX = deltaY * lineWidth / length / 2;
+            deltaY = temp * lineWidth / length / 2;
             miter11 = PointMake(startPoint.x - deltaX, startPoint.y + deltaY);
             miter12 = PointMake(startPoint.x + deltaX, startPoint.y - deltaY);
             miter21 = PointMake(stopPoint.x - deltaX, stopPoint.y + deltaY);
